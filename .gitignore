@@ -1,0 +1,16 @@
+# generated data + outputs
+data/
+out/
+*.csv
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/

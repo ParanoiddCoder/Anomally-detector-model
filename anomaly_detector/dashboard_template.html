@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EV Fleet Anomaly Dashboard</title>
+<style>
+  :root{--bg:#0b0f17;--fg:#e5e7eb;--muted:#94a3b8;--card:#111827;--line:#1f2937;
+        --elev:#fbbf24;--watch:#60a5fa;--norm:#34d399;--gap:#6b7280;--accent:#22d3ee}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.4 system-ui,Segoe UI,Inter,sans-serif;background:var(--bg);color:var(--fg)}
+  header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+  h1{margin:0;font-size:18px;font-weight:600}
+  header .meta{color:var(--muted);font-size:12px}
+  .layout{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 60px)}
+  .left{border-right:1px solid var(--line);overflow:auto;padding:16px}
+  .right{overflow:auto;padding:20px}
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+  .metric{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;text-align:center}
+  .metric .label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .metric .value{font-size:22px;font-weight:600;margin-top:2px}
+  .m-e{border-color:var(--elev)} .m-e .value{color:var(--elev)}
+  .m-w{border-color:var(--watch)} .m-w .value{color:var(--watch)}
+  .m-n{border-color:var(--norm)} .m-n .value{color:var(--norm)}
+  .gap-row{margin:6px 0 14px;padding:6px 10px;background:#0f172a;border:1px dashed var(--line);
+           border-radius:6px;font-size:12px;color:var(--muted);display:flex;justify-content:space-between}
+  .gap-row b{color:var(--gap)}
+  .breakdown{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:14px}
+  .breakdown h4{margin:0 0 6px;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.05em}
+  .breakdown table{width:100%;border-collapse:collapse;font-size:12px}
+  .breakdown th,.breakdown td{padding:4px 6px;text-align:right;border-bottom:1px solid var(--line)}
+  .breakdown th:first-child,.breakdown td:first-child{text-align:left}
+  .breakdown .e{color:var(--elev)} .breakdown .w{color:var(--watch)} .breakdown .n{color:var(--norm)}
+  .breakdown tbody tr:hover{background:#162033}
+  .breakdown tbody tr.selected{outline:1px solid var(--accent);background:#162033}
+  .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .chip{padding:4px 10px;border:1px solid var(--line);border-radius:999px;cursor:pointer;font-size:12px;color:var(--muted)}
+  .chip.active{background:var(--accent);color:#000;border-color:var(--accent)}
+  input.search{width:100%;padding:8px 10px;background:var(--card);border:1px solid var(--line);border-radius:6px;color:var(--fg);margin-bottom:10px}
+  .vlist{display:flex;flex-direction:column;gap:4px}
+  .vrow{padding:8px 10px;border:1px solid var(--line);border-left-width:3px;border-radius:6px;background:var(--card);cursor:pointer}
+  .vrow:hover{background:#162033}
+  .vrow.selected{outline:1px solid var(--accent)}
+  .vrow.elevated{border-left-color:var(--elev)}
+  .vrow.watch{border-left-color:var(--watch)}
+  .vrow.normal{border-left-color:var(--norm)}
+  .vrow .imei{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .vrow .meta{color:var(--muted);font-size:11px;margin-top:2px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+  .b-e{background:rgba(251,191,36,.15);color:var(--elev)}
+  .b-w{background:rgba(96,165,250,.15);color:var(--watch)}
+  .b-n{background:rgba(52,211,153,.15);color:var(--norm)}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:14px}
+  .panel h3{margin:0 0 8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .det-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+  .det{padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#0f172a}
+  .det.strong{border-color:var(--elev);background:rgba(251,191,36,.08)}
+  .det .id{font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)}
+  .det .lbl{font-size:12px;margin:2px 0}
+  .det .stats{font-family:ui-monospace,monospace;font-size:11px;color:var(--accent)}
+  .empty{color:var(--muted);font-size:12px;font-style:italic}
+  .pill{display:inline-block;padding:1px 8px;border-radius:999px;background:#1f2937;color:var(--muted);font-size:11px;margin-left:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>EV Fleet Anomaly Dashboard <span class="pill" id="hScope" style="background:#1f3a2a;color:#34d399">all models</span></h1>
+  <span class="meta">pipeline: <b id="hPipeline">—</b> &middot; total: <b id="hTotal">—</b> &middot; gate: ELEVATED = (ML AND ≥1 dual) OR ≥3 dual</span>
+</header>
+
+<div class="layout">
+  <aside class="left">
+    <div class="metrics">
+      <div class="metric m-e"><div class="label">Elevated</div><div class="value" id="mE">0</div></div>
+      <div class="metric m-w"><div class="label">Watch</div><div class="value" id="mW">0</div></div>
+      <div class="metric m-n"><div class="label">Normal</div><div class="value" id="mN">0</div></div>
+    </div>
+    <div class="gap-row">
+      <span>No valid trips (data gap, hidden from list)</span>
+      <span><b id="mGap">0</b> vehicles</span>
+    </div>
+
+    <div class="breakdown">
+      <h4>Variant breakdown <span style="text-transform:none;color:var(--muted);font-weight:400">(click to filter list)</span></h4>
+      <table id="variantTable">
+        <thead><tr><th>Variant</th><th class="e">ELV</th><th class="w">WCH</th><th class="n">NRM</th><th>Total</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="filters" id="filters">
+      <span class="chip active" data-f="elevated">🟠 Elevated</span>
+      <span class="chip" data-f="watch">🔵 Watch</span>
+      <span class="chip" data-f="normal">🟢 Normal</span>
+      <span class="chip" data-f="all">All</span>
+    </div>
+    <div class="filters" id="variantFilters"></div>
+    <input class="search" id="search" placeholder="Search IMEI / variant…">
+    <div class="vlist" id="vlist"></div>
+  </aside>
+
+  <main class="right" id="detail">
+    <div class="empty">Select a vehicle from the left to see its detector breakdown. Vehicles with no valid trips are excluded — see the data-gap counter on the left.</div>
+  </main>
+</div>
+
+<script>
+const DATA = {{DATA_JSON}};
+const DETECTORS = [
+  ["d1_rpm_speed",          "RPM high, Speed low (drivetrain slip)"],
+  ["d2_throttle_speed",     "Throttle high, Speed low (demand without motion)"],
+  ["d3_throttle_current",   "Throttle high, Current low (controller fault)"],
+  ["d4_current_torque",     "Current high, Torque low (motor inefficiency)"],
+  ["d5_current_rpm_torque", "Current+RPM high, Torque low (freewheel / driveline)"],
+  ["d6_torque_speed",       "Torque high, Speed low (drag / brake-binding)"],
+  ["d7_charge_overtaper",   "SoC high, Charge current high (BMS not tapering)"],
+  ["d8_temp_overheat",      "Controller temp high, Current low (cooling fault)"],
+];
+
+const summary = DATA.summary || {};
+const NO_TRIPS_REASON = "DATA_GAP_NO_VALID_TRIPS";
+
+// Drop data-gap vehicles before rendering — show their count separately.
+const allVehicles = DATA.vehicles || [];
+const gapCount = summary.no_trips ?? allVehicles.filter(v => v.watch_reason === NO_TRIPS_REASON).length;
+const realWatch = summary.watch_real ?? Math.max((summary.watch || 0) - gapCount, 0);
+const ORDER = {ELEVATED:0, WATCH:1, NORMAL:2};
+const vehicles = allVehicles
+  .filter(v => v.watch_reason !== NO_TRIPS_REASON)
+  .sort((a,b) => (ORDER[a.verdict]??9) - (ORDER[b.verdict]??9)
+                 || (b.strong_metric_count||0) - (a.strong_metric_count||0));
+
+document.getElementById("hPipeline").textContent = summary.pipeline_version || "—";
+const scopeEl = document.getElementById("hScope");
+const includedModels = (summary.params && summary.params.models_included) || null;
+if (Array.isArray(includedModels) && includedModels.length){
+  scopeEl.textContent = includedModels.join(", ") + " only";
+} else if (includedModels === null){
+  scopeEl.textContent = "all models";
+}
+document.getElementById("hTotal").textContent = (summary.total_validated || 0).toLocaleString() + " (− " + gapCount.toLocaleString() + " no-trip)";
+document.getElementById("mE").textContent = (summary.elevated || 0).toLocaleString();
+document.getElementById("mW").textContent = realWatch.toLocaleString();
+document.getElementById("mN").textContent = (summary.normal || 0).toLocaleString();
+document.getElementById("mGap").textContent = gapCount.toLocaleString();
+
+// Variant breakdown — count only listed (non-data-gap) vehicles.
+const vbreak = {};
+for(const v of vehicles){
+  if(!vbreak[v.variant]) vbreak[v.variant] = {ELEVATED:0, WATCH:0, NORMAL:0};
+  vbreak[v.variant][v.verdict] = (vbreak[v.variant][v.verdict] || 0) + 1;
+}
+const variantRows = Object.entries(vbreak)
+  .map(([name, c]) => ({name, ...c, total: c.ELEVATED + c.WATCH + c.NORMAL}))
+  .sort((a,b) => b.ELEVATED - a.ELEVATED || b.total - a.total || a.name.localeCompare(b.name));
+
+let activeVariant = "all";
+
+const vbody = document.querySelector("#variantTable tbody");
+for(const r of variantRows){
+  const tr = document.createElement("tr");
+  tr.style.cursor = "pointer";
+  tr.dataset.variant = r.name;
+  tr.innerHTML = `<td>${r.name}</td><td class="e">${r.ELEVATED}</td><td class="w">${r.WATCH}</td><td class="n">${r.NORMAL}</td><td>${r.total}</td>`;
+  tr.onclick = () => { activeVariant = (activeVariant === r.name) ? "all" : r.name; syncVariantUI(); renderList(); };
+  vbody.appendChild(tr);
+}
+
+// Variant filter chips — surface top variants by ELEVATED, plus an "All" chip.
+const vfilters = document.getElementById("variantFilters");
+const topVariants = variantRows.slice(0, 8);
+const allChip = document.createElement("span");
+allChip.className = "chip active"; allChip.dataset.v = "all"; allChip.textContent = "All variants";
+vfilters.appendChild(allChip);
+for(const r of topVariants){
+  if(r.total === 0) continue;
+  const c = document.createElement("span");
+  c.className = "chip"; c.dataset.v = r.name;
+  c.textContent = `${r.name} (${r.ELEVATED})`;
+  vfilters.appendChild(c);
+}
+vfilters.addEventListener("click", e => {
+  const c = e.target.closest(".chip"); if(!c) return;
+  activeVariant = c.dataset.v; syncVariantUI(); renderList();
+});
+
+function syncVariantUI(){
+  document.querySelectorAll("#variantFilters .chip").forEach(x => {
+    x.classList.toggle("active", x.dataset.v === activeVariant
+      || (activeVariant === "all" && x.dataset.v === "all"));
+  });
+  document.querySelectorAll("#variantTable tbody tr").forEach(tr => {
+    tr.classList.toggle("selected", tr.dataset.variant === activeVariant);
+  });
+}
+
+let activeFilter = "elevated";
+let activeImei = null;
+
+function badge(v){
+  const cls = v==="ELEVATED"?"b-e":(v==="WATCH"?"b-w":"b-n");
+  return `<span class="badge ${cls}">${v}</span>`;
+}
+
+function renderList(){
+  const q = (document.getElementById("search").value || "").toLowerCase();
+  const list = document.getElementById("vlist");
+  list.innerHTML = "";
+  let shown = 0;
+  for(const v of vehicles){
+    if(activeFilter !== "all" && v.verdict.toLowerCase() !== activeFilter) continue;
+    if(activeVariant !== "all" && v.variant !== activeVariant) continue;
+    if(q && !((v.imei||"").toLowerCase().includes(q) || (v.variant||"").toLowerCase().includes(q))) continue;
+    const row = document.createElement("div");
+    row.className = "vrow " + v.verdict.toLowerCase() + (activeImei===v.imei?" selected":"");
+    row.innerHTML = `
+      <div class="imei">${v.imei}${v.detector_flag?" <span class='pill'>ML</span>":""}</div>
+      <div class="meta">${v.variant} · ${v.verdict} · ${v.strong_metric_count||0} strong · ${v.n_trips||0} trips</div>`;
+    row.onclick = () => { activeImei = v.imei; renderList(); renderDetail(v); };
+    list.appendChild(row); shown++;
+    if(shown>=500) break;
+  }
+  if(!shown){ list.innerHTML = '<div class="empty">No vehicles match.</div>'; }
+}
+
+function renderDetail(v){
+  const dets = v.detectors || {};
+  const rows = DETECTORS.map(([id,label]) => {
+    const flat = (k) => v[`${id}_${k}`];
+    const events = (dets[id]?.events_total) ?? flat("events_total") ?? 0;
+    const maxd   = (dets[id]?.max_dwell_s)  ?? flat("max_dwell_s")  ?? 0;
+    const rate   = (dets[id]?.rate_per_hour) ?? flat("rate") ?? 0;
+    const z      = (dets[id]?.z) ?? flat("z");
+    const strong = (dets[id]?.strong) ?? flat("strong") ?? false;
+    return `<div class="det ${strong?"strong":""}">
+      <div class="id">${id}${strong?" · STRONG":""}</div>
+      <div class="lbl">${label}</div>
+      <div class="stats">${events} events · max ${(+maxd).toFixed(0)}s · ${(+rate).toFixed(2)}/h${z!=null?` · z=${(+z).toFixed(2)}`:""}</div>
+    </div>`;
+  }).join("");
+
+  document.getElementById("detail").innerHTML = `
+    <div class="panel">
+      <h3>Vehicle</h3>
+      <table>
+        <tr><td>IMEI</td><td><b>${v.imei}</b></td><td>Variant</td><td>${v.variant}</td></tr>
+        <tr><td>Verdict</td><td>${badge(v.verdict)}</td><td>Reason</td><td>${v.watch_reason||""}</td></tr>
+        <tr><td>ML flag</td><td>${v.detector_flag?"yes":"no"}${v.isolation_score!=null?` (iso ${(+v.isolation_score).toFixed(3)})`:""}</td>
+            <td>Strong dual-signal</td><td>${v.strong_metric_count||0}</td></tr>
+        <tr><td>Drive hours</td><td>${(v.drive_hours||0).toFixed(2)}</td>
+            <td>Charge hours</td><td>${(v.charge_hours||0).toFixed(2)}</td></tr>
+        <tr><td>Trips</td><td>${v.n_trips||0}</td><td>Peers</td><td>${v.n_peers||0}</td></tr>
+        <tr><td>Controller mode</td><td colspan="3">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="display:flex;height:12px;width:160px;border-radius:3px;overflow:hidden;border:1px solid var(--line)">
+              <div title="Eco ${((v.mode_0_frac||0)*100).toFixed(0)}%" style="flex:${(v.mode_0_frac||0).toFixed(4)};background:#4ade80"></div>
+              <div title="Thunder ${((v.mode_1_frac||0)*100).toFixed(0)}%" style="flex:${(v.mode_1_frac||0).toFixed(4)};background:#f87171"></div>
+            </div>
+            <span style="font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)">
+              Eco ${((v.mode_0_frac||0)*100).toFixed(0)}% &middot; Thunder ${((v.mode_1_frac||0)*100).toFixed(0)}%
+            </span>
+          </div>
+        </td></tr>
+      </table>
+      ${v.reason?`<div style="margin-top:10px;color:var(--elev)">Reason: ${v.reason}</div>`:""}
+    </div>
+    <div class="panel">
+      <h3>Dual-relationship detectors (8)</h3>
+      <div class="det-grid">${rows}</div>
+    </div>`;
+}
+
+document.getElementById("filters").addEventListener("click", e => {
+  const c = e.target.closest(".chip"); if(!c) return;
+  document.querySelectorAll("#filters .chip").forEach(x => x.classList.remove("active"));
+  c.classList.add("active"); activeFilter = c.dataset.f; renderList();
+});
+document.getElementById("search").addEventListener("input", renderList);
+renderList();
+</script>
+</body>
+</html>
